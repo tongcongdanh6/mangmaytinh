@@ -67,6 +67,7 @@
       background-color: #ecebeb;
       bottom: 0;
     }
+
   </style>
 </head>
 
@@ -96,6 +97,65 @@
         });
     }
 
+    function handleGenerationClick(subject, category = "", questNumber = 1) {
+      let element = $(this.event.target);
+      element.prop("disabled", true);
+      let ref = `/${subject}/`;
+      db.ref(`${ref}`).once("value", snap => {
+        localMem.qBank = snap.val();
+      })
+        .then(function () {
+          element.prop("disabled", false);
+          createQuestion(localMem.qBank, category, questNumber);
+        });
+    }
+
+
+    function createQuestion(questionBank, category = "", questNumber = 1) {
+      // Remove RESULT TABLE IF EXISTS
+      if ($("result-wrapper").is(":visible")) {
+        $("result-wrapper").hide();
+        $("#goToNextQuestBtn").removeClass("btn-warning");
+        $("#goToNextQuestBtn").addClass("btn-success");
+        $("#goToNextQuestBtn").html("Gửi câu trả lời & đến câu kế tiếp");
+      }
+
+      let pool = generateRandomQuestion_2(questionBank, questNumber); // Returned Array Object
+      localMem.userQuestionPool = pool;
+      //console.log("USER QUESTION POOL (Randomized): ", pool); // ***********
+
+      // SET TO users ref
+      let ref = "/users/" + localMem.currentUser.uid + "/game";
+      let data = {
+        current: 0,
+        answers: [],
+        start: firebase.database.ServerValue.TIMESTAMP,
+        type: "SOLO",
+        questions: pool
+      };
+      db.ref(ref)
+        .set(data)
+        .then(function () {
+          localMem.userGameRef = ref;
+          displayQuestion(ref);
+        });
+    }
+
+    function generateRandomQuestion_2(questionPool, questNumber) {
+      let keyOfPool = Object.keys(questionPool); // ARRAY
+      let newQuestionPoolWithShuffledAns = [];
+      let randomKeyQuestionPool = [];
+      // RANDOM QUESTION FROM POOL
+
+      for (i = 0; i < questNumber; i++) {
+        let rndIdx = Math.floor(Math.random() * (keyOfPool.length));
+        let shuffledAns = {};
+        randomKeyQuestionPool.push(keyOfPool.splice(rndIdx, 1)[0]);
+      }
+
+      return suffleAnswer(questionPool, randomKeyQuestionPool); // will return Array of Object
+    }
+
     function generateRandomQuestion(numberOfQuestion = 1) {
       let keyOfPool = Object.keys(localMem.questionBank); // ARRAY
       // console.log("keyOfPool", keyOfPool); // ****
@@ -117,14 +177,11 @@
       return suffleAnswer(randomKeyQuestionPool); // will return Array of Object
     }
 
-    function displayQuestion(pool) {
-      console.log(pool);
-    }
 
-    function suffleAnswer(arrayOfIdQuest) {
+    function suffleAnswer(questionPool, arrayOfIdQuest) {
       let resultArray = [];
       for (idx in arrayOfIdQuest) {
-        let quest = localMem.questionBank[arrayOfIdQuest[idx]];
+        let quest = questionPool[arrayOfIdQuest[idx]];
         let correctAnsInitial = quest.correct;
         // console.log(correctAns);
         // Do Suffle
@@ -200,11 +257,36 @@
     }
 
     function displayUserDetail(user) {
-      $("user-detail greeting-message").html("Xin chào, ");
+      // Greeting Message
+      let nowHour = new Date().getHours();
+      let message = "";
+      if (nowHour >= 2 && nowHour <= 6) {
+        message = "Chào sáng sớm, ";
+      }
+      else if (nowHour >= 7 && nowHour <= 10) {
+        message = "Chào buổi sáng, ";
+      }
+      else if (nowHour >= 11 && nowHour <= 13) {
+        message = "Chào buổi trưa, ";
+      }
+      else if (nowHour >= 14 && nowHour <= 17) {
+        message = "Chào buổi chiều, ";
+      }
+      else if (nowHour >= 18 && nowHour <= 22) {
+        message = "Chào buổi tối, "
+      }
+      else {
+        message = "Tranh thủ ngủ đi bạn, ";
+      }
+
+      $("user-detail greeting-message").html(message);
+
+      // #Greeting Message
+
+      $("user-detail username").html(localMem.currentUser.displayName);
       $("user-detail user-photo").html(
         `<img src=${user.photoURL} width="25">`
       );
-      $("user-detail username").html(localMem.currentUser.displayName);
       $("user-detail user-email").html(user.email);
     }
 
@@ -390,23 +472,16 @@
   </script>
   <logged-in>
     <nav class="navbar navbar-expand-sm navbar-dark bg-primary">
-      <a class="navbar-brand" href="#">Mạng máy tính QUIZ</a>
+      <a class="navbar-brand" href="#">QUIZ Tổng hợp</a>
       <button class="navbar-toggler d-lg-none" type="button" data-toggle="collapse" data-target="#collapsibleNavId"
         aria-controls="collapsibleNavId" aria-expanded="false" aria-label="Toggle navigation"></button>
-      <div class="w-100" style="display: flex; justify-content: space-between;">
-
-        <mode-selection>
-          <button id="playSoloModeBtn" class="btn btn-warning" onclick="playSoloMode(5)" disabled>
-            Click vào đây để Generate câu hỏi (5 câu)
-          </button>
-        </mode-selection>
-
-        <user-detail>
+      <div class="w-100" style="display: flex; justify-content: flex-end;">
+        <user-detail class="pr-5">
           <greeting-message></greeting-message>
-          <user-photo></user-photo>
           <strong>
             <username></username>
           </strong>
+          <user-photo></user-photo>
           (<user-email></user-email>)
         </user-detail>
         <button id="logoutBtn" class="btn btn-warning" onclick="signOut()">
@@ -414,12 +489,26 @@
         </button>
       </div>
     </nav>
+    <div class="container my-3" id="control-panel">
+      <div class="card">
+        <div class="card-header">
+          Bảng điều khiển tạo ngẫu nhiên câu hỏi <strong>(mặc định 5 câu)</strong>
+        </div>
+        <div class="card-body">
+          <button id="playSoloModeBtn" class="btn btn-warning" onclick="handleGenerationClick('services','',5)"
+            disabled>
+            Mạng Máy Tính
+          </button>
+          <button class="btn btn-warning" onclick="handleGenerationClick('ltw_services','',5)">
+            Lập trình Web - CSS
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div class="container">
       <div class="row">
         <div class="col">
-
-
           <question-wrapper class="my-5">
             <div class="card">
               <div class="card-header">
@@ -442,22 +531,24 @@
               Kết quả của bạn
             </h2>
             <result>
-              <table class="table" id="result-table">
-                <thead>
-                  <tr>
-                    <th>Câu hỏi</th>
-                    <th>Đáp án</th>
-                    <th>Trả lời của bạn</th>
-                  </tr>
-                </thead>
-                <tbody id="result-body">
-                  <tr>
-                    <td scope="row"></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                </tbody>
-              </table>
+              <div class="table-responsive">
+                <table class="table" id="result-table">
+                  <thead>
+                    <tr>
+                      <th>Câu hỏi</th>
+                      <th>Đáp án</th>
+                      <th>Trả lời của bạn</th>
+                    </tr>
+                  </thead>
+                  <tbody id="result-body">
+                    <tr>
+                      <td scope="row"></td>
+                      <td></td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </result>
           </result-wrapper>
         </div>
@@ -475,7 +566,7 @@
       <div class="container">
         <span class="text-muted">
           Coded by DANH based on Firebase Google<br />
-          Version: 20.10.17.23
+          Version: 20.10.20.01
         </span>
       </div>
     </footer>
