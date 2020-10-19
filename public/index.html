@@ -37,6 +37,7 @@
     }
 
     user-detail {
+      display: block;
       color: #fff;
     }
 
@@ -392,7 +393,7 @@
       <a class="navbar-brand" href="#">Mạng máy tính QUIZ</a>
       <button class="navbar-toggler d-lg-none" type="button" data-toggle="collapse" data-target="#collapsibleNavId"
         aria-controls="collapsibleNavId" aria-expanded="false" aria-label="Toggle navigation"></button>
-      <div class="collapse navbar-collapse" id="collapsibleNavId">
+      <div class="w-100" style="display: flex; justify-content: space-between;">
 
         <mode-selection>
           <button id="playSoloModeBtn" class="btn btn-warning" onclick="playSoloMode(5)" disabled>
@@ -400,9 +401,6 @@
           </button>
         </mode-selection>
 
-
-      </div>
-      <div>
         <user-detail>
           <greeting-message></greeting-message>
           <user-photo></user-photo>
