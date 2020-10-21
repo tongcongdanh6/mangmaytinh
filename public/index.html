@@ -53,7 +53,7 @@
       background-color: #fff;
       padding: 20px;
       border-radius: 15px;
-      margin-bottom: 150px;
+      margin-bottom: 50px;
     }
 
     question {
@@ -63,7 +63,7 @@
 
     .footer {
       position: fixed;
-      height: 50px;
+      height: auto;
       background-color: #ecebeb;
       bottom: 0;
     }
@@ -97,7 +97,15 @@
         });
     }
 
-    function handleGenerationClick(subject, category = "", questNumber = 1) {
+    function handleGenerationClick(subject, category = "") {
+      let numOfQues = $("#number-question").val();
+      if(numOfQues < 0 || numOfQues > 7) {
+        alert("Hiện tại Database chỉ hỗ trợ tối đa 7 câu hỏi");
+        return false;
+      }
+
+
+      $("#goToNextQuestBtn").prop("disabled", false);
       let element = $(this.event.target);
       element.prop("disabled", true);
       let ref = `/${subject}/`;
@@ -106,12 +114,14 @@
       })
         .then(function () {
           element.prop("disabled", false);
-          createQuestion(localMem.qBank, category, questNumber);
+          createQuestion(localMem.qBank, category, numOfQues);
         });
     }
 
 
     function createQuestion(questionBank, category = "", questNumber = 1) {
+
+
       // Remove RESULT TABLE IF EXISTS
       if ($("result-wrapper").is(":visible")) {
         $("result-wrapper").hide();
@@ -128,6 +138,7 @@
       let ref = "/users/" + localMem.currentUser.uid + "/game";
       let data = {
         current: 0,
+        quizCategory: category,
         answers: [],
         start: firebase.database.ServerValue.TIMESTAMP,
         type: "SOLO",
@@ -139,6 +150,19 @@
           localMem.userGameRef = ref;
           displayQuestion(ref);
         });
+    }
+
+
+    function resumeQuizIfNotCompleteYet(user) {
+      localMem.userGameRef = `/users/${user.uid}/game`;
+      db.ref(localMem.userGameRef).once("value", (s) => {
+        let tmp = s.val();
+          if(tmp.current < tmp.questions.length - 1) {
+        if(tmp) {
+            displayQuestion(localMem.userGameRef);
+          }
+        }
+      });
     }
 
     function generateRandomQuestion_2(questionPool, questNumber) {
@@ -256,6 +280,88 @@
       db.ref(ref).update(newInfoFromLastLoggedIn);
     }
 
+    function synchronizeUserOnline(user) {
+      let uid = user.uid;
+      let userPath = `/users/${uid}`;
+      let userRef = db.ref(userPath);
+      let connectionRef = db.ref(`${userPath}/connections`);
+      let lastOnlineRef = db.ref(`${userPath}/lastOnline`);
+
+      let nowConnectRef = connectionRef.push(true);
+      nowConnectRef.onDisconnect().remove();
+      
+      lastOnlineRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
+
+
+    }
+
+    function checkAndUpdateDisplayUserOnline() {
+      
+      db.ref("/users/").on("value", (s) => {
+        let tmp = s.val();
+        let html = "";
+        if(tmp) {
+          for(userKey in tmp) {
+            if(tmp[userKey].connections === undefined) {
+              // lastOnlineRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
+            }
+            else {
+              let html1 = "";
+              let html2 = "";
+              let userAnsHTML = "";
+              localMem.curOfWrongAns = 0;
+              localMem.curOfRightAns = 0;
+              localMem.curCategory = "Chưa tạo câu hỏi";
+
+              html1 = `
+              <div class="row pt-2">
+                <div class="col">
+                  <img src=${tmp[userKey].photo} width="25">
+                  ${tmp[userKey].displayName}
+                  <span id="user-answer-status">
+              `;
+              if(tmp[userKey].game !== undefined) {
+                // console.log("tmp[userKey].game", tmp[userKey].game);
+                localMem.curCategory = tmp[userKey].game.quizCategory;
+
+                if(tmp[userKey].game.answers !== undefined) {
+                  // console.log("tmp[userKey].game.answers", tmp[userKey].game.answers);
+                  for(ans in tmp[userKey].game.answers) {
+
+                    if(tmp[userKey].game.answers[ans].userAnswer != tmp[userKey].game.questions[ans].correct) {
+                      userAnsHTML += `<span style="color: rgb(180, 8, 8)">&#10008</span>`;
+                      localMem.curOfWrongAns++;
+                    }
+                    else {
+                      userAnsHTML += `<span style="color: rgb(0, 94, 0)">&#10004</span>`;
+                      localMem.curOfRightAns++;
+                    }
+                  }
+                }
+              }
+
+              html2 = `
+                  </span>
+                  <span class="badge badge-primary" id="user-current-number-question">
+                    ${(tmp[userKey].game !== undefined) ? tmp[userKey].game.questions.length + " câu hỏi" : "Chưa tạo câu hỏi"}</span>
+                  <span class="badge badge-success" id="user-current-right-answer">${localMem.curOfRightAns} Đúng</span>
+                  <span class="badge badge-danger" id="user-current-wrong-answer">${localMem.curOfWrongAns} Sai</span>
+                  <span class="badge badge-info" id="user-current-category">Đang làm Quiz mục: 
+                  ${(localMem.curCategory === "css") ? "CSS" : (localMem.curCategory === "mmt") ? "Mạng máy tính" : "Chưa tạo câu hỏi"}</span>
+                </div>
+              </div>   
+              `;
+
+              html += html1 + userAnsHTML + html2;
+            }
+            
+          }
+          $('#user-online').html(html);
+          // $('#user-answer-status').html(userAnswerStatHtml);
+        }
+      });
+    }
+
     function displayUserDetail(user) {
       // Greeting Message
       let nowHour = new Date().getHours();
@@ -359,40 +465,29 @@
       let newData = {};
       db.ref(ref).once("value", snapshot => {
         let tmp = snapshot.val();
-        if (tmp.current === 0) {
-          let tmpAns = [];
-          tmpAns.push({
-            questId: tmp.questions[tmp.current].questId,
-            userAnswer: frm.answer.value
-          });
-          newData = {
-            current: tmp.current + 1,
-            answers: tmpAns
-          };
-        } else if (tmp.current < tmp.questions.length && tmp.current > 0) {
-          // console.log(snapshot.val()); // ******
-          let tmpAns = snapshot.val().answers;
-          tmpAns.push({
-            questId: tmp.questions[tmp.current].questId,
-            userAnswer: frm.answer.value
-          });
-          newData = {
-            current: tmp.current + 1,
-            answers: tmpAns
-          };
-
-          if (tmp.current === tmp.questions.length - 1) {
-            $("#goToNextQuestBtn").removeClass("btn-success");
-            $("#goToNextQuestBtn").addClass("btn-warning");
-            $("#goToNextQuestBtn").html("Xem kết quả");
-          }
-
-        } else {
-
-          showResult(ref);
-          scrollToAnchor("result");
+        let tempAns = [];
+        if(tmp.current < tmp.questions.length && tmp.current > 0) {
+          tempAns = snapshot.val().answers;
         }
-        db.ref(ref).update(newData);
+        tempAns.push({
+            questId: tmp.questions[tmp.current].questId,
+            userAnswer: frm.answer.value
+          });
+        newData = {
+          current: tmp.current + 1,
+          answers: tempAns
+        };
+        db.ref(ref).update(newData).then(function(){
+          db.ref(ref).once("value", (s) => {
+            let tmp = s.val();
+            if(tmp) {
+              if(tmp.current === tmp.questions.length) {
+                showResult(ref);
+                scrollToAnchor("result");
+              }
+            }
+          });
+        });
       });
       // console.log(current);
       console.log(frm.answer.value);
@@ -400,6 +495,11 @@
 
     function showResult(ref) {
       $("result-wrapper").show();
+      $("#goToNextQuestBtn").removeClass("btn-success");
+      $("#goToNextQuestBtn").addClass("btn-warning");
+      $("#goToNextQuestBtn").html("Đang load dữ liệu kết quả ...");
+
+
       let correctAns = [];
       let userAns = [];
       db.ref(ref).once('value', (snap) => {
@@ -414,8 +514,13 @@
           })
         }
       }).then(function () {
-        console.log("correctAns", correctAns);
-        console.log("userAns", userAns);
+        // console.log("correctAns", correctAns);
+        // console.log("userAns", userAns);
+
+        $("#goToNextQuestBtn").removeClass("btn-warning");
+        $("#goToNextQuestBtn").addClass("btn-success");
+        $("#goToNextQuestBtn").html("KẾT QUẢ CỦA BẠN Ở BÊN DƯỚI");
+        $("#goToNextQuestBtn").prop("disabled", true);
         let resultRightWrong = "";
         for (x in correctAns) {
           if (correctAns[x] !== userAns[x]) {
@@ -457,6 +562,9 @@
             $("result-wrapper").hide();
             updateUserProfile(loggedUser);
             displayUserDetail(loggedUser);
+            synchronizeUserOnline(loggedUser);
+            checkAndUpdateDisplayUserOnline();
+            resumeQuizIfNotCompleteYet(loggedUser);
 
             getQuestionBank();
           } else {
@@ -492,14 +600,19 @@
     <div class="container my-3" id="control-panel">
       <div class="card">
         <div class="card-header">
-          Bảng điều khiển tạo ngẫu nhiên câu hỏi <strong>(mặc định 5 câu)</strong>
+          Bảng điều khiển tạo ngẫu nhiên câu hỏi <strong>(Nhập số lượng câu cần tạo bên dưới)</strong>
+          <form>
+            <div class="form-group">
+              <input type="number" class="form-control" style="font-size: 20px" id="number-question" value="5" min = "1" max = "7">
+            </div>
+          </form>
         </div>
         <div class="card-body">
-          <button id="playSoloModeBtn" class="btn btn-warning" onclick="handleGenerationClick('services','',5)"
+          <button id="playSoloModeBtn" class="btn btn-warning" onclick="handleGenerationClick('services','mmt')"
             disabled>
             Mạng Máy Tính
           </button>
-          <button class="btn btn-warning" onclick="handleGenerationClick('ltw_services','',5)">
+          <button class="btn btn-warning" onclick="handleGenerationClick('ltw_services','css')">
             Lập trình Web - CSS
           </button>
         </div>
@@ -509,7 +622,7 @@
     <div class="container">
       <div class="row">
         <div class="col">
-          <question-wrapper class="my-5">
+          <question-wrapper class="my-3">
             <div class="card">
               <div class="card-header">
                 <question></question>
@@ -554,19 +667,27 @@
         </div>
       </div>
     </div>
-    <!-- QUESTION -->
-    <div class="container">
+
+    <div class="container mb-4">
       <div class="row">
-        <div class="col"></div>
+        <div class="col">
+          <div class="card">
+            <div class="card-header">
+              <span class="text-success">Thành viên đang Online (Real-Time status)</span>
+            </div>
+            <div class="card-body" id="user-online">
+
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <!-- ./QUESTION -->
 
-    <footer class="footer">
+    <footer class="footer w-100">
       <div class="container">
-        <span class="text-muted">
-          Coded by DANH based on Firebase Google<br />
-          Version: 20.10.20.01
+        <span class="text-muted" style="font-size: 14px;">
+          Coded by DANH based on Firebase Google. Version: 20.10.20.01
+          
         </span>
       </div>
     </footer>
